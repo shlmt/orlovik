@@ -74,7 +74,7 @@
         <section id="section-report">
             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
                 <h2 class="text-lg font-bold mb-6 text-blue-800">
-                   דיווח היעדרות חדש
+                    דיווח היעדרות חדש
                 </h2>
                 <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
                     <div>
@@ -124,7 +124,7 @@
                 <!-- Table Header with Search/Filter -->
                 <div class="bg-gray-50 px-6 py-4 border-b flex flex-col md:flex-row justify-between items-center gap-4">
                     <h3 class="font-bold text-gray-700 flex items-center gap-2">
-                        <i data-lucide="list" class="w-5 h-5"></i> דיווחים קיימים
+                        <i data-lucide="list" class="w-5 h-5"></i> דיווחים קיימים לחודש <span id="currentMonthDisplay"></span>
                     </h3>
                     <div class="relative w-full md:w-72">
                         <span class="absolute inset-y-0 right-3 flex items-center text-gray-400">
@@ -217,10 +217,29 @@
         // --- משתני מצב ---
         let employees = JSON.parse(localStorage.getItem('emp_data') || '[]');
         let substitutes = JSON.parse(localStorage.getItem('sub_data') || '[]');
-        let reports = JSON.parse(localStorage.getItem('rep_data') || '[]');
+        
+        // נתוני דוחות - נטענים דינמית לפי חודש
+        let currentMonthReports = [];
+        
         let currentMonth = new Date().toISOString().slice(0, 7);
         let activeTab = 'report';
         let currentSubRows = [];
+
+        // --- פונקציית עזר לניהול מפתחות LocalStorage לפי חודש ---
+        function getReportsKey(month = currentMonth) {
+            return `rep_data_${month}`;
+        }
+
+        function loadReportsForMonth() {
+            const key = getReportsKey();
+            currentMonthReports = JSON.parse(localStorage.getItem(key) || '[]');
+            document.getElementById('currentMonthDisplay').innerText = currentMonth;
+        }
+
+        function saveReportsForMonth() {
+            const key = getReportsKey();
+            localStorage.setItem(key, JSON.stringify(currentMonthReports));
+        }
 
         // --- אתחול ---
         window.onload = () => {
@@ -230,6 +249,7 @@
             mPicker.onchange = (e) => {
                 currentMonth = e.target.value;
                 updateDateLimits();
+                loadReportsForMonth();
                 renderReports();
             };
 
@@ -249,6 +269,7 @@
 
             updateDateLimits();
             populateSelects();
+            loadReportsForMonth();
             renderReports();
             lucide.createIcons();
         };
@@ -375,7 +396,7 @@
             
             if (!empId || !start || !end) return alert("מלא פרטים חסרים");
 
-            reports.push({
+            currentMonthReports.push({
                 id: Date.now(),
                 employeeId: empId,
                 reason: document.getElementById('rep-reason').value,
@@ -386,7 +407,7 @@
                 subRows: [...currentSubRows]
             });
 
-            localStorage.setItem('rep_data', JSON.stringify(reports));
+            saveReportsForMonth();
             currentSubRows = [];
             document.getElementById('rep-start').value = '';
             document.getElementById('rep-end').value = '';
@@ -401,10 +422,9 @@
             const body = document.getElementById('reportsBody');
             const query = document.getElementById('reportSearch').value.toLowerCase();
             
-            const filtered = reports.filter(r => {
-                const inMonth = r.startDate.startsWith(currentMonth) || r.endDate.startsWith(currentMonth);
-                if (!inMonth) return false;
-
+            // בשיטה החדשה currentMonthReports כבר מכיל רק את נתוני החודש הנבחר.
+            // אנחנו רק מבצעים סינון של חיפוש (Search) ומיון לתצוגה.
+            const filtered = currentMonthReports.filter(r => {
                 const emp = employees.find(e => e.id == r.employeeId);
                 const empName = emp ? emp.name.toLowerCase() : "";
                 
@@ -415,11 +435,21 @@
 
                 return empName.includes(query) || hasSub || query === "";
             });
+
+            // מיון לתצוגה (לפי מס' עובדת ואז תאריך)
+            filtered.sort((a, b) => {
+                const empA = employees.find(e => e.id == a.employeeId);
+                const empB = employees.find(e => e.id == b.employeeId);
+                const numA = empA ? parseInt(empA.empNum) || 0 : 0;
+                const numB = empB ? parseInt(empB.empNum) || 0 : 0;
+                if (numA !== numB) return numA - numB;
+                return a.startDate.localeCompare(b.startDate);
+            });
             
             body.innerHTML = filtered.map(r => {
                 const emp = employees.find(e => e.id == r.employeeId);
                 const isSingleDay = r.startDate === r.endDate;
-                
+
                 // לוגיקה לתצוגת ימים/שעות
                 const daysValue = (isSingleDay && r.hoursMissing) ? "" : r.daysCount;
                 const hoursValue = r.hoursMissing || "";
@@ -467,14 +497,14 @@
             }).join('');
             
             if (!filtered.length) {
-                body.innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400 italic">לא נמצאו דיווחים התואמים לחיפוש בחודש זה</td></tr>';
+                body.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-gray-400 italic">לא נמצאו דיווחים לחודש ${currentMonth}</td></tr>`;
             }
             lucide.createIcons();
         }
 
         function deleteReport(id) {
-            reports = reports.filter(r => r.id !== id);
-            localStorage.setItem('rep_data', JSON.stringify(reports));
+            currentMonthReports = currentMonthReports.filter(r => r.id !== id);
+            saveReportsForMonth();
             renderReports();
         }
 
@@ -546,7 +576,19 @@
         }
 
         function exportToExcel() {
-            const currentReports = reports.filter(r => r.startDate.startsWith(currentMonth) || r.endDate.startsWith(currentMonth));
+            // הנתונים כבר מסוננים לפי חודש בתוך currentMonthReports
+            const exportData = [...currentMonthReports];
+            
+            // מיון: קודם לפי מספר עובדת ואז לפי תאריך
+            exportData.sort((a, b) => {
+                const empA = employees.find(e => e.id == a.employeeId);
+                const empB = employees.find(e => e.id == b.employeeId);
+                const numA = empA ? parseInt(empA.empNum) || 0 : 0;
+                const numB = empB ? parseInt(empB.empNum) || 0 : 0;
+                if (numA !== numB) return numA - numB;
+                return a.startDate.localeCompare(b.startDate);
+            });
+
             const headers = [
                 "קוד קבוצה", "שם קבוצה", "מס' עובדת", "ת.ז", "שם עובדת", "משרה", "ש\"ש", 
                 "סיבת היעדרות", "תאריך מ", "תאריך עד", "ימי עבודה", "שעות", "הערות",
@@ -555,15 +597,13 @@
             ];
             const rows = [headers];
 
-            currentReports.forEach(rep => {
+            exportData.forEach(rep => {
                 const emp = employees.find(e => e.id == rep.employeeId);
                 if (!emp) return;
                 
                 const isSingleDay = rep.startDate === rep.endDate;
                 const hasHours = isSingleDay && rep.hoursMissing;
-                
-                let finalDaysValue = rep.daysCount;
-                if (isSingleDay && hasHours) finalDaysValue = "";
+                let finalDaysValue = (isSingleDay && hasHours) ? "" : rep.daysCount;
 
                 const subEntries = rep.subRows.length > 0 ? rep.subRows : [null];
                 
