@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>דיווח היעדרויות - אורלוביק</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+      <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml"
+          href='data:image/svg+xml;utf8,
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%231e40af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1"/>
+            <path d="M9 2h6v4H9z"/>
+            <rect x="3" y="6" width="10" height="14" rx="2"/>
+            <circle cx="17" cy="14" r="4"/>
+            <path d="M17 12v2l1 1"/>
+          </svg>' />
+    <!-- SheetJS (Excel) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Assistant:wght@300;400;600;700&display=swap');
+        body { font-family: 'Assistant', sans-serif; }
+        .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: bold; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-gray-50 text-right">
+
+    <!-- Header -->
+    <header class="bg-white border-b sticky top-0 z-20 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-blue-600 p-2 rounded-lg text-white">
+                    <i data-lucide="clipboard-clock"></i>
+                </div>
+                <h1 class="text-xl font-bold text-blue-900">מערכת היעדרויות אורלוביק</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <input type="month" id="monthPicker" class="border p-2 rounded text-sm font-bold bg-gray-50 outline-none">
+                <button onclick="exportToExcel()" class="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700 transition font-medium">
+                    <i data-lucide="download" class="w-4 h-4"></i> ייצוא לאקסל
+                </button>
+            </div>
+        </div>
+        
+        <nav class="max-w-7xl mx-auto px-4 flex gap-6">
+            <button onclick="switchTab('report')" id="tab-report" class="flex items-center gap-2 py-3 px-2 transition tab-active">
+                <i data-lucide="clock" class="w-4 h-4"></i> דיווח נוכחות
+            </button>
+            <button onclick="switchTab('employees')" id="tab-employees" class="flex items-center gap-2 py-3 px-2 transition text-gray-400">
+                <i data-lucide="users" class="w-4 h-4"></i> ניהול עובדות
+            </button>
+            <button onclick="switchTab('substitutes')" id="tab-substitutes" class="flex items-center gap-2 py-3 px-2 transition text-gray-400">
+                <i data-lucide="user-plus" class="w-4 h-4"></i> מאגר מילוי מקום
+            </button>
+        </nav>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-8">
+        
+        <!-- Tab: Report -->
+        <section id="section-report">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
+                <h2 class="text-lg font-bold mb-6 text-blue-800">
+                   דיווח היעדרות חדש
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">עובדת</label>
+                        <select id="rep-employee" class="border w-full p-2 rounded bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">סיבה</label>
+                        <select id="rep-reason" class="border w-full p-2 rounded bg-white"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">מתאריך</label>
+                        <input type="date" id="rep-start" class="border w-full p-2 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">עד תאריך</label>
+                        <input type="date" id="rep-end" class="border w-full p-2 rounded">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 mb-1">ימי עבודה</label>
+                        <input type="number" id="rep-days-count" placeholder="חישוב אוטומטי" class="border w-full p-2 rounded bg-yellow-50">
+                    </div>
+                    <div id="hours-input-wrapper">
+                        <label class="block text-xs font-bold text-gray-500 mb-1">שעות היעדרות (רק ליום אחד)</label>
+                        <input type="number" id="rep-hours-missing" placeholder="ריק ליום מלא" class="border w-full p-2 rounded disabled:bg-gray-100 disabled:cursor-not-allowed">
+                    </div>
+                </div>
+
+                <!-- Substitutes Sub-Form -->
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 mb-6">
+                    <div class="flex justify-between mb-3">
+                        <h3 class="font-bold text-sm text-blue-900 italic">שיבוץ ממלאות מקום</h3>
+                        <button onclick="addSubRow()" class="text-xs bg-white border border-blue-300 text-blue-700 px-3 py-1 rounded-full hover:bg-blue-100 transition shadow-sm">+ הוסף שורת מ"מ</button>
+                    </div>
+                    <div id="subRowsContainer"></div>
+                </div>
+
+                <div class="flex justify-end">
+                    <button onclick="saveReport()" class="bg-blue-600 text-white px-8 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 shadow-md transition">
+                        <i data-lucide="save" class="w-5 h-5"></i> שמור דיווח במערכת
+                    </button>
+                </div>
+            </div>
+
+            <!-- Reports Table Container -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <!-- Table Header with Search/Filter -->
+                <div class="bg-gray-50 px-6 py-4 border-b flex flex-col md:flex-row justify-between items-center gap-4">
+                    <h3 class="font-bold text-gray-700 flex items-center gap-2">
+                        <i data-lucide="list" class="w-5 h-5"></i> דיווחים קיימים
+                    </h3>
+                    <div class="relative w-full md:w-72">
+                        <span class="absolute inset-y-0 right-3 flex items-center text-gray-400">
+                            <i data-lucide="search" class="w-4 h-4"></i>
+                        </span>
+                        <input type="text" id="reportSearch" oninput="renderReports()" placeholder="חפש עובדת או מחליפה..." class="w-full pr-10 pl-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-200 outline-none">
+                    </div>
+                </div>
+
+                <!-- Table Content -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-right">
+                        <thead class="bg-gray-100 border-b text-gray-600">
+                            <tr>
+                                <th class="px-4 py-3 font-semibold">עובדת</th>
+                                <th class="px-4 py-3 font-semibold">סיבת היעדרות</th>
+                                <th class="px-4 py-3 font-semibold">תאריכים</th>
+                                <th class="px-4 py-3 font-semibold text-center">ימים</th>
+                                <th class="px-4 py-3 font-semibold text-center">שעות</th>
+                                <th class="px-4 py-3 font-semibold">שיבוץ מחליפות (מ"מ)</th>
+                                <th class="px-4 py-3 font-semibold text-center w-20">פעולות</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reportsBody" class="divide-y divide-gray-100"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- Tab: Employees & Substitutes -->
+        <section id="section-data" class="hidden">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                <h2 id="data-title" class="text-lg font-bold mb-6 text-blue-800 border-b pb-2"></h2>
+                <div id="data-form" class="grid grid-cols-1 md:grid-cols-6 gap-2 mb-6 bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-right">
+                        <thead class="bg-gray-100 border-b" id="data-head"></thead>
+                        <tbody id="data-body" class="divide-y"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // --- קבועים ---
+        const REASONS = ["מחלת עובדת עם אישור", "מחלת ילד/ה עם אישור", "שעות הריון עם אישור", "מחלה או שעות הריון ללא אישור", "היעדרות לא בשכר", "ימי הצהרה", "נישואי עובדת", "אבל", "אזכרה", "שמחה משפחתית", "שמירת הריון", "חופשת לידה", "חופשת לידה תאומים", "מילואים", "יציאה לועדות בשכר", "תאונת עבודה"];
+        const ROLES = ["גננת", "גננת סבב", "סייעת", "סייעת סבב", "סייעת רפואית", "סייעת שניה", "סייעת תגבור"];
+        const SUB_CODES = ["מ\"מ גננת", "מ\"מ סייעת", "הפרש גננת-סייעת", "עבדה לבד", "תגבור", "ללא מ\"מ"];
+
+        // --- משתני מצב ---
+        let employees = JSON.parse(localStorage.getItem('emp_data') || '[]');
+        let substitutes = JSON.parse(localStorage.getItem('sub_data') || '[]');
+        let reports = JSON.parse(localStorage.getItem('rep_data') || '[]');
+        let currentMonth = new Date().toISOString().slice(0, 7);
+        let activeTab = 'report';
+        let currentSubRows = [];
+
+        // --- אתחול ---
+        window.onload = () => {
+            const mPicker = document.getElementById('monthPicker');
+            mPicker.value = currentMonth;
+            
+            mPicker.onchange = (e) => {
+                currentMonth = e.target.value;
+                updateDateLimits();
+                renderReports();
+            };
+
+            const startIn = document.getElementById('rep-start');
+            const endIn = document.getElementById('rep-end');
+
+            startIn.onchange = (e) => {
+                endIn.value = e.target.value;
+                autoCalculateDays();
+                validateHoursField();
+            };
+
+            endIn.onchange = () => {
+                autoCalculateDays();
+                validateHoursField();
+            };
+
+            updateDateLimits();
+            populateSelects();
+            renderReports();
+            lucide.createIcons();
+        };
+
+        function autoCalculateDays() {
+            const startVal = document.getElementById('rep-start').value;
+            const endVal = document.getElementById('rep-end').value;
+            const daysIn = document.getElementById('rep-days-count');
+
+            if (startVal && endVal) {
+                const s = new Date(startVal);
+                const e = new Date(endVal);
+                if (e >= s) {
+                    const diffTime = Math.abs(e - s);
+                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                    daysIn.value = diffDays;
+                } else {
+                    daysIn.value = '';
+                }
+            }
+        }
+
+        function validateHoursField() {
+            const startVal = document.getElementById('rep-start').value;
+            const endVal = document.getElementById('rep-end').value;
+            const hoursIn = document.getElementById('rep-hours-missing');
+
+            if (startVal && endVal && startVal !== endVal) {
+                hoursIn.disabled = true;
+                hoursIn.value = '';
+            } else {
+                hoursIn.disabled = false;
+            }
+        }
+
+        function updateDateLimits() {
+            const [year, month] = currentMonth.split('-');
+            const firstDay = `${currentMonth}-01`;
+            const lastDayDate = new Date(year, month, 0);
+            const lastDay = `${currentMonth}-${String(lastDayDate.getDate()).padStart(2, '0')}`;
+            
+            const startInput = document.getElementById('rep-start');
+            const endInput = document.getElementById('rep-end');
+            
+            startInput.min = firstDay;
+            startInput.max = lastDay;
+            endInput.min = firstDay;
+            endInput.max = lastDay;
+
+            startInput.value = '';
+            endInput.value = '';
+            document.getElementById('rep-days-count').value = '';
+            validateHoursField();
+        }
+
+        function switchTab(tabId) {
+            activeTab = tabId;
+            document.querySelectorAll('nav button').forEach(b => b.classList.remove('tab-active', 'text-blue-600', 'font-bold'));
+            document.querySelectorAll('nav button').forEach(b => b.classList.add('text-gray-400'));
+            document.getElementById('tab-' + tabId).classList.add('tab-active', 'text-blue-600', 'font-bold');
+            
+            if (tabId === 'report') {
+                document.getElementById('section-report').classList.remove('hidden');
+                document.getElementById('section-data').classList.add('hidden');
+                renderReports();
+            } else {
+                document.getElementById('section-report').classList.add('hidden');
+                document.getElementById('section-data').classList.remove('hidden');
+                renderDataManager(tabId);
+            }
+            lucide.createIcons();
+        }
+
+        function populateSelects() {
+            const empSel = document.getElementById('rep-employee');
+            empSel.innerHTML = '<option value="">בחר עובדת...</option>' + 
+                employees.map(e => `<option value="${e.id}">${e.name} (${e.role})</option>`).join('');
+
+            const resSel = document.getElementById('rep-reason');
+            resSel.innerHTML = REASONS.map(r => `<option value="${r}">${r}</option>`).join('');
+        }
+
+        function addSubRow() {
+            const id = Date.now();
+            currentSubRows.push({ id, subId: '', code: 'מ"מ סייעת', hours: '', days: '' });
+            renderSubRows();
+        }
+
+        function renderSubRows() {
+            const container = document.getElementById('subRowsContainer');
+            container.innerHTML = currentSubRows.map(row => `
+                <div class="flex gap-2 mb-2 items-center bg-white p-2 rounded border border-blue-50">
+                    <select onchange="updateSubRowData(${row.id}, 'subId', this.value)" class="border flex-1 p-2 rounded text-xs bg-gray-50">
+                        <option value="">בחר מחליפה...</option>
+                        ${substitutes.map(s => `<option value="${s.id}" ${row.subId == s.id ? 'selected' : ''}>${s.name} (${s.rate}₪)</option>`).join('')}
+                    </select>
+                    <select onchange="updateSubRowData(${row.id}, 'code', this.value)" class="border w-32 p-2 rounded text-xs bg-gray-50">
+                        ${SUB_CODES.map(c => `<option value="${c}" ${row.code == c ? 'selected' : ''}>${c}</option>`).join('')}
+                    </select>
+                    <input type="number" placeholder="שעות" value="${row.hours}" oninput="updateSubRowData(${row.id}, 'hours', this.value)" class="border w-20 p-2 rounded text-xs">
+                    <input type="number" placeholder="ימים" value="${row.days}" oninput="updateSubRowData(${row.id}, 'days', this.value)" class="border w-20 p-2 rounded text-xs">
+                    <button onclick="removeSubRow(${row.id})" class="text-red-500 p-1"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function updateSubRowData(id, field, val) {
+            const row = currentSubRows.find(r => r.id === id);
+            if (row) row[field] = val;
+        }
+
+        function removeSubRow(id) {
+            currentSubRows = currentSubRows.filter(r => r.id !== id);
+            renderSubRows();
+        }
+
+        function saveReport() {
+            const empId = document.getElementById('rep-employee').value;
+            const start = document.getElementById('rep-start').value;
+            const end = document.getElementById('rep-end').value;
+            const daysCount = document.getElementById('rep-days-count').value;
+            const hoursMissing = document.getElementById('rep-hours-missing').value;
+            
+            if (!empId || !start || !end) return alert("מלא פרטים חסרים");
+
+            reports.push({
+                id: Date.now(),
+                employeeId: empId,
+                reason: document.getElementById('rep-reason').value,
+                startDate: start,
+                endDate: end,
+                daysCount: daysCount,
+                hoursMissing: hoursMissing,
+                subRows: [...currentSubRows]
+            });
+
+            localStorage.setItem('rep_data', JSON.stringify(reports));
+            currentSubRows = [];
+            document.getElementById('rep-start').value = '';
+            document.getElementById('rep-end').value = '';
+            document.getElementById('rep-days-count').value = '';
+            document.getElementById('rep-hours-missing').value = '';
+            validateHoursField();
+            renderSubRows();
+            renderReports();
+        }
+
+        function renderReports() {
+            const body = document.getElementById('reportsBody');
+            const query = document.getElementById('reportSearch').value.toLowerCase();
+            
+            const filtered = reports.filter(r => {
+                const inMonth = r.startDate.startsWith(currentMonth) || r.endDate.startsWith(currentMonth);
+                if (!inMonth) return false;
+
+                const emp = employees.find(e => e.id == r.employeeId);
+                const empName = emp ? emp.name.toLowerCase() : "";
+                
+                const hasSub = r.subRows.some(s => {
+                    const sub = substitutes.find(subObj => subObj.id == s.subId);
+                    return sub && sub.name.toLowerCase().includes(query);
+                });
+
+                return empName.includes(query) || hasSub || query === "";
+            });
+            
+            body.innerHTML = filtered.map(r => {
+                const emp = employees.find(e => e.id == r.employeeId);
+                const isSingleDay = r.startDate === r.endDate;
+                
+                // לוגיקה לתצוגת ימים/שעות
+                const daysValue = (isSingleDay && r.hoursMissing) ? "" : r.daysCount;
+                const hoursValue = r.hoursMissing || "";
+
+                return `
+                    <tr class="hover:bg-blue-50/30 transition text-[13px] group">
+                        <td class="px-4 py-4">
+                            <div class="font-bold text-gray-800">${emp ? emp.name : 'נמחקה'}</div>
+                            <div class="text-[11px] text-gray-400">${emp ? emp.role : ''}</div>
+                        </td>
+                        <td class="px-4 py-4 text-gray-600 font-medium">${r.reason}</td>
+                        <td class="px-4 py-4 text-gray-500 font-mono">
+                            ${r.startDate} <i data-lucide="arrow-left" class="w-3 h-3 inline text-gray-300 mx-1"></i> ${r.endDate}
+                        </td>
+                        <td class="px-4 py-4 text-center font-bold ${daysValue ? 'text-blue-600' : 'text-gray-200'}">
+                            ${daysValue || '-'}
+                        </td>
+                        <td class="px-4 py-4 text-center font-bold ${hoursValue ? 'text-orange-600' : 'text-gray-200'}">
+                            ${hoursValue || '-'}
+                        </td>
+                        <td class="px-4 py-4">
+                            <div class="flex flex-col gap-2">
+                                ${r.subRows.length ? r.subRows.map(s => {
+                                    const sub = substitutes.find(subObj => subObj.id == s.subId);
+                                    return `
+                                        <div class="flex items-center gap-2 bg-white border border-gray-100 rounded-lg px-2 py-1 shadow-sm">
+                                            <span class="font-bold text-blue-900">${sub ? sub.name : '?'}</span>
+                                            <span class="text-[11px] bg-blue-100 text-blue-700 px-1.5 rounded-md">${s.code}</span>
+                                            <div class="mr-auto flex gap-2 text-[11px]">
+                                                ${s.hours ? `<span class="bg-gray-100 px-1 rounded">${s.hours} שעות</span>` : ''}
+                                                ${s.days ? `<span class="bg-gray-100 px-1 rounded">${s.days} ימים</span>` : ''}
+                                            </div>
+                                        </div>
+                                    `;
+                                }).join('') : '<span class="text-gray-300 italic text-xs">ללא מילוי מקום</span>'}
+                            </div>
+                        </td>
+                        <td class="px-4 py-4 text-center">
+                            <button onclick="deleteReport(${r.id})" class="text-gray-300 hover:text-red-500 transition-colors p-2">
+                                <i data-lucide="trash-2" class="w-5 h-5"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            if (!filtered.length) {
+                body.innerHTML = '<tr><td colspan="7" class="text-center py-12 text-gray-400 italic">לא נמצאו דיווחים התואמים לחיפוש בחודש זה</td></tr>';
+            }
+            lucide.createIcons();
+        }
+
+        function deleteReport(id) {
+            reports = reports.filter(r => r.id !== id);
+            localStorage.setItem('rep_data', JSON.stringify(reports));
+            renderReports();
+        }
+
+        function renderDataManager(type) {
+            const isEmp = type === 'employees';
+            const config = isEmp ? {
+                title: 'ניהול עובדות קבועות',
+                items: employees,
+                fields: [
+                    { name: 'name', label: 'שם מלא' },
+                    { name: 'cardId', label: 'ת.ז' },
+                    { name: 'empNum', label: 'מס\' עובד' },
+                    { name: 'role', label: 'תפקיד', type: 'select', options: ROLES },
+                    { name: 'hours', label: "ש\'\'ש" }
+                ]
+            } : {
+                title: 'ניהול מאגר ממלאות מקום',
+                items: substitutes,
+                fields: [
+                    { name: 'name', label: 'שם מלא' },
+                    { name: 'cardId', label: 'ת.ז' },
+                    { name: 'empNum', label: 'מס\' עובד' },
+                    { name: 'rate', label: 'תעריף שעה' },
+                    { name: 'travel', label: 'נסיעות יומי' }
+                ]
+            };
+
+            document.getElementById('data-title').innerText = config.title;
+            const form = document.getElementById('data-form');
+            form.innerHTML = config.fields.map(f => f.type === 'select' ? `
+                <select id="data-in-${f.name}" class="border w-full p-2 rounded text-xs bg-white">
+                    <option value="">${f.label}</option>
+                    ${f.options.map(o => `<option value="${o}">${o}</option>`).join('')}
+                </select>
+            ` : `<input id="data-in-${f.name}" class="border w-full p-2 rounded text-xs text-right" placeholder="${f.label}">`).join('') +
+            `<button onclick="addDataItem('${type}')" class="bg-blue-600 text-white rounded-lg px-2 hover:bg-blue-700 text-xs font-bold">הוסף</button>`;
+
+            document.getElementById('data-head').innerHTML = `<tr>${config.fields.map(f => `<th class="px-4 py-2 text-gray-500">${f.label}</th>`).join('')}<th class="px-4 py-2 text-center text-gray-500">פעולות</th></tr>`;
+            document.getElementById('data-body').innerHTML = config.items.map(item => `
+                <tr class="hover:bg-gray-50">
+                    ${config.fields.map(f => `<td class="px-4 py-2">${item[f.name] || ''}</td>`).join('')}
+                    <td class="px-4 py-2 text-center">
+                        <button onclick="deleteDataItem('${type}', ${item.id})" class="text-red-400 hover:text-red-600"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        function addDataItem(type) {
+            const isEmp = type === 'employees';
+            const fields = isEmp ? ['name', 'cardId', 'empNum', 'role', 'hours'] : ['name', 'cardId', 'empNum', 'rate', 'travel'];
+            const newItem = { id: Date.now() };
+            fields.forEach(f => {
+                newItem[f] = document.getElementById('data-in-' + f).value;
+                document.getElementById('data-in-' + f).value = '';
+            });
+            if (isEmp) { employees.push(newItem); localStorage.setItem('emp_data', JSON.stringify(employees)); }
+            else { substitutes.push(newItem); localStorage.setItem('sub_data', JSON.stringify(substitutes)); }
+            populateSelects();
+            renderDataManager(type);
+        }
+
+        function deleteDataItem(type, id) {
+            if (type === 'employees') { employees = employees.filter(e => e.id !== id); localStorage.setItem('emp_data', JSON.stringify(employees)); }
+            else { substitutes = substitutes.filter(s => s.id !== id); localStorage.setItem('sub_data', JSON.stringify(substitutes)); }
+            populateSelects();
+            renderDataManager(type);
+        }
+
+        function exportToExcel() {
+            const currentReports = reports.filter(r => r.startDate.startsWith(currentMonth) || r.endDate.startsWith(currentMonth));
+            const headers = [
+                "קוד קבוצה", "שם קבוצה", "מס' עובדת", "ת.ז", "שם עובדת", "משרה", "ש\"ש", 
+                "סיבת היעדרות", "תאריך מ", "תאריך עד", "ימי עבודה", "שעות", "הערות",
+                "דיווחי נוכחות", "ללא היעדרויות",
+                "מס' עובדת (מ\"מ)", "ת.ז (מ\"מ)", "שם עובדת (מ\"מ)", "קוד מילוי מקום", "שעות", "תעריף לשעה", "ימי עבודה בפועל", "תעריף נסיעות יומי"
+            ];
+            const rows = [headers];
+
+            currentReports.forEach(rep => {
+                const emp = employees.find(e => e.id == rep.employeeId);
+                if (!emp) return;
+                
+                const isSingleDay = rep.startDate === rep.endDate;
+                const hasHours = isSingleDay && rep.hoursMissing;
+                
+                let finalDaysValue = rep.daysCount;
+                if (isSingleDay && hasHours) finalDaysValue = "";
+
+                const subEntries = rep.subRows.length > 0 ? rep.subRows : [null];
+                
+                subEntries.forEach((sr, index) => {
+                    const subObj = sr ? substitutes.find(s => s.id == sr.subId) : null;
+                    const isFirstRow = index === 0;
+
+                    const row = [
+                        isFirstRow ? 244 : "", 
+                        isFirstRow ? "אורלוביק" : "", 
+                        isFirstRow ? emp.empNum : "", 
+                        isFirstRow ? emp.cardId : "", 
+                        isFirstRow ? emp.name : "", 
+                        isFirstRow ? emp.role : "", 
+                        isFirstRow ? emp.hours : "", 
+                        isFirstRow ? rep.reason : "", 
+                        isFirstRow ? rep.startDate : "", 
+                        isFirstRow ? rep.endDate : "", 
+                        isFirstRow ? finalDaysValue : "", 
+                        isFirstRow ? (hasHours ? rep.hoursMissing : "") : "", 
+                        isFirstRow ? " " : "", 
+                        " ", 
+                        " ", 
+                        subObj?.empNum || "", 
+                        subObj?.cardId || "", 
+                        subObj?.name || "", 
+                        sr?.code || (rep.subRows.length ? "" : "ללא מ\"מ"),
+                        sr?.hours || "", 
+                        subObj?.rate || "", 
+                        sr?.days || "", 
+                        subObj?.travel || ""
+                    ];
+                    rows.push(row);
+                });
+            });
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "דוח");
+            XLSX.writeFile(wb, `Orlovik_Report_${currentMonth}.xlsx`);
+        }
+    </script>
+</body>
+</html>
